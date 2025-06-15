@@ -191,17 +191,35 @@ class MainiXInstaller:
             self.stdscr.addstr(20, 2, "Error during disk partitioning!")
             self.stdscr.getch()
             return False
+        
+        # Refresh partition table - CRITICAL FIX
+        self.draw_progress("Refreshing partition table...")
+        subprocess.run(f"partprobe {self.disk}", shell=True)
+        time.sleep(2)  # Give the system time to detect changes
+        subprocess.run("sync", shell=True)  # Ensure changes are written
     
         # Root partition selection
         while True:
             self.draw_progress(f"Select root partition on {self.disk}")
             
-            # Get partitions on selected disk
+            # Get partitions on selected disk using more reliable method
             partitions = []
             try:
-                lsblk_output = subprocess.getoutput(f"lsblk -l -n -o NAME,SIZE,FSTYPE {self.disk}").split('\n')
+                # Use lsblk with better filtering
+                lsblk_output = subprocess.getoutput(
+                    f"lsblk -l -n -o NAME,SIZE,FSTYPE {self.disk} | grep '{self.disk[5:]}.'"
+                ).split('\n')
+                
+                if not lsblk_output or not lsblk_output[0].strip():
+                    self.stdscr.addstr(10, 2, "No partitions found! Did you:")
+                    self.stdscr.addstr(11, 2, "1) Create partitions in cfdisk?")
+                    self.stdscr.addstr(12, 2, "2) Select 'Write' to save changes?")
+                    self.stdscr.addstr(13, 2, "3) Press any key to retry...")
+                    self.stdscr.getch()
+                    continue
+    
                 for line in lsblk_output:
-                    if line.strip() and not line.startswith(self.disk[5:]):  # Exclude the disk itself
+                    if line.strip():
                         parts = line.split()
                         if len(parts) >= 2:
                             part_name = parts[0]
@@ -210,11 +228,6 @@ class MainiXInstaller:
                             partitions.append((f"/dev/{part_name}", f"{part_name} ({size}, {fstype})"))
             except Exception as e:
                 self.stdscr.addstr(10, 2, f"Error getting partition list: {str(e)}")
-                self.stdscr.getch()
-                return False
-    
-            if not partitions:
-                self.stdscr.addstr(10, 2, "No partitions found! Please create them in cfdisk.")
                 self.stdscr.getch()
                 return False
     
@@ -248,21 +261,6 @@ class MainiXInstaller:
             self.stdscr.getch()
             return False
     
-        return True
-        
-        subprocess.run(f"cfdisk {self.disk}", shell=True)
-        partitions = subprocess.getoutput(f"lsblk {self.disk} -o NAME,SIZE -n").split('\n')[1:]
-        self.stdscr.addstr(19, 2, "Select root partition (number): ")
-        curses.echo()
-        part_num = int(self.stdscr.getstr(19, 30, 2).decode())
-        curses.noecho()
-        self.root_part = f"/dev/{partitions[part_num-1].split()[0]}"
-        
-        if not os.path.exists(self.root_part):
-            self.stdscr.addstr(21, 2, f"Error: Partition {self.root_part} not found!")
-            self.stdscr.getch()
-            return False
-            
         return True
     
     def user_setup(self):
