@@ -43,8 +43,8 @@ pacman -Sy python ncurses debootstrap
 1. Boot into Arch Linux Live CD environment
 2. Clone or download the installer:
    ```bash
-   git clone https://github.com/yourusername/mainix-installer.git
-   cd mainix-installer
+   git clone https://github.com/mainixlinux/installer.git
+   cd installer
    ```
 3. Make the installer executable:
    ```bash
