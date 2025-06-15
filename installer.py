@@ -134,11 +134,11 @@ class MainiXInstaller:
         return True
     
     def disk_partition(self):
-        # Выбор диска
+        # Disk selection
         while True:
-            self.draw_progress("Выберите диск для установки")
+            self.draw_progress("Select installation disk")
             
-            # Получаем список дисков (исключая loop устройства и разделы)
+            # Get list of disks (excluding loop devices and partitions)
             disks = []
             try:
                 lsblk_output = subprocess.getoutput("lsblk -d -n -o NAME,SIZE,MODEL").split('\n')
@@ -146,26 +146,26 @@ class MainiXInstaller:
                     if line.strip():
                         parts = line.split(maxsplit=2)
                         disk_name = parts[0]
-                        # Исключаем loop устройства и разделы
-                        if not disk_name.startswith('loop') and not any(c in disk_name for c in ['0','1','2','3','4','5','6','7','8','9']):
+                        # Exclude loop devices and partitions (those with numbers)
+                        if not disk_name.startswith('loop') and not any(c.isdigit() for c in disk_name):
                             size = parts[1]
                             model = parts[2] if len(parts) > 2 else "Unknown"
                             disks.append((f"/dev/{disk_name}", f"{disk_name} ({size}, {model})"))
             except Exception as e:
-                self.stdscr.addstr(10, 2, f"Ошибка получения списка дисков: {str(e)}")
+                self.stdscr.addstr(10, 2, f"Error getting disk list: {str(e)}")
                 self.stdscr.getch()
                 return False
     
             if not disks:
-                self.stdscr.addstr(10, 2, "Не найдено подходящих дисков!")
+                self.stdscr.addstr(10, 2, "No suitable disks found!")
                 self.stdscr.getch()
                 return False
     
-            # Отображаем список дисков
+            # Display disk list
             for i, (_, disk_info) in enumerate(disks):
                 self.stdscr.addstr(10 + i, 2, f"{i + 1}. {disk_info}")
     
-            self.stdscr.addstr(10 + len(disks) + 1, 2, "Выберите диск (номер) или Q для выхода: ")
+            self.stdscr.addstr(10 + len(disks) + 1, 2, "Select disk (number) or Q to quit: ")
             curses.echo()
             disk_input = self.stdscr.getstr(10 + len(disks) + 1, 40, 3).decode().strip().upper()
             curses.noecho()
@@ -179,29 +179,29 @@ class MainiXInstaller:
                     self.disk, _ = disks[disk_num - 1]
                     break
                 else:
-                    self.stdscr.addstr(10 + len(disks) + 3, 2, "Неверный номер диска! Попробуйте снова.")
+                    self.stdscr.addstr(10 + len(disks) + 3, 2, "Invalid disk number! Try again.")
                     self.stdscr.getch()
             except ValueError:
-                self.stdscr.addstr(10 + len(disks) + 3, 2, "Введите число или Q для выхода!")
+                self.stdscr.addstr(10 + len(disks) + 3, 2, "Please enter a number or Q to quit!")
                 self.stdscr.getch()
     
-        # Разметка диска
-        self.draw_progress(f"Разметка диска {self.disk} (запуск cfdisk)")
+        # Partitioning with cfdisk
+        self.draw_progress(f"Partitioning {self.disk} (launching cfdisk)")
         if subprocess.run(f"cfdisk {self.disk}", shell=True).returncode != 0:
-            self.stdscr.addstr(20, 2, "Ошибка при разметке диска!")
+            self.stdscr.addstr(20, 2, "Error during disk partitioning!")
             self.stdscr.getch()
             return False
     
-        # Выбор раздела для корневой файловой системы
+        # Root partition selection
         while True:
-            self.draw_progress(f"Выберите раздел на {self.disk} для корневой системы")
+            self.draw_progress(f"Select root partition on {self.disk}")
             
-            # Получаем список разделов на выбранном диске
+            # Get partitions on selected disk
             partitions = []
             try:
                 lsblk_output = subprocess.getoutput(f"lsblk -l -n -o NAME,SIZE,FSTYPE {self.disk}").split('\n')
                 for line in lsblk_output:
-                    if line.strip() and not line.startswith(self.disk[5:]):  # Исключаем сам диск
+                    if line.strip() and not line.startswith(self.disk[5:]):  # Exclude the disk itself
                         parts = line.split()
                         if len(parts) >= 2:
                             part_name = parts[0]
@@ -209,20 +209,20 @@ class MainiXInstaller:
                             fstype = parts[2] if len(parts) > 2 else "unknown"
                             partitions.append((f"/dev/{part_name}", f"{part_name} ({size}, {fstype})"))
             except Exception as e:
-                self.stdscr.addstr(10, 2, f"Ошибка получения списка разделов: {str(e)}")
+                self.stdscr.addstr(10, 2, f"Error getting partition list: {str(e)}")
                 self.stdscr.getch()
                 return False
     
             if not partitions:
-                self.stdscr.addstr(10, 2, "На диске нет разделов! Создайте их в cfdisk.")
+                self.stdscr.addstr(10, 2, "No partitions found! Please create them in cfdisk.")
                 self.stdscr.getch()
                 return False
     
-            # Отображаем список разделов
+            # Display partition list
             for i, (_, part_info) in enumerate(partitions):
                 self.stdscr.addstr(10 + i, 2, f"{i + 1}. {part_info}")
     
-            self.stdscr.addstr(10 + len(partitions) + 1, 2, "Выберите раздел для / (номер) или Q для выхода: ")
+            self.stdscr.addstr(10 + len(partitions) + 1, 2, "Select root partition (number) or Q to quit: ")
             curses.echo()
             part_input = self.stdscr.getstr(10 + len(partitions) + 1, 45, 3).decode().strip().upper()
             curses.noecho()
@@ -236,15 +236,15 @@ class MainiXInstaller:
                     self.root_part, _ = partitions[part_num - 1]
                     break
                 else:
-                    self.stdscr.addstr(10 + len(partitions) + 3, 2, "Неверный номер раздела! Попробуйте снова.")
+                    self.stdscr.addstr(10 + len(partitions) + 3, 2, "Invalid partition number! Try again.")
                     self.stdscr.getch()
             except ValueError:
-                self.stdscr.addstr(10 + len(partitions) + 3, 2, "Введите число или Q для выхода!")
+                self.stdscr.addstr(10 + len(partitions) + 3, 2, "Please enter a number or Q to quit!")
                 self.stdscr.getch()
     
-        # Проверка существования раздела
+        # Verify partition exists
         if not os.path.exists(self.root_part):
-            self.stdscr.addstr(10 + len(partitions) + 3, 2, f"Ошибка: Раздел {self.root_part} не найден!")
+            self.stdscr.addstr(10 + len(partitions) + 3, 2, f"Error: Partition {self.root_part} not found!")
             self.stdscr.getch()
             return False
     
