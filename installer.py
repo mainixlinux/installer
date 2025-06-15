@@ -159,6 +159,42 @@ class MainiXInstaller:
                 self.stdscr.getch()
         
         subprocess.run(f"cfdisk {self.disk}", shell=True)
+        
+        # Получаем список разделов для выбранного диска
+        partitions = subprocess.getoutput(f"lsblk -l {self.disk} -o NAME,SIZE -n").split('\n')
+        partitions = [p for p in partitions if p and not p.startswith(self.disk[5:])]  # Исключаем сам диск
+        
+        while True:
+            self.draw_progress("Select root partition")
+            
+            for i, part in enumerate(partitions):
+                self.stdscr.addstr(10+i, 2, f"{i+1}. {part}")
+            
+            self.stdscr.addstr(19, 2, "Select root partition (number): ")
+            curses.echo()
+            part_input = self.stdscr.getstr(19, 30, 2).decode()
+            curses.noecho()
+            
+            try:
+                part_num = int(part_input)
+                if 1 <= part_num <= len(partitions):
+                    self.root_part = f"/dev/{partitions[part_num-1].split()[0]}"
+                    break
+                else:
+                    self.stdscr.addstr(21, 2, "Invalid partition number! Try again.")
+                    self.stdscr.getch()
+            except ValueError:
+                self.stdscr.addstr(21, 2, "Please enter a valid number!")
+                self.stdscr.getch()
+        
+        if not os.path.exists(self.root_part):
+            self.stdscr.addstr(21, 2, f"Error: Partition {self.root_part} not found!")
+            self.stdscr.getch()
+            return False
+            
+        return True
+        
+        subprocess.run(f"cfdisk {self.disk}", shell=True)
         partitions = subprocess.getoutput(f"lsblk {self.disk} -o NAME,SIZE -n").split('\n')[1:]
         self.stdscr.addstr(19, 2, "Select root partition (number): ")
         curses.echo()
