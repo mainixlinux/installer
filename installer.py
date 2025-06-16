@@ -175,9 +175,9 @@ class MainiXInstaller:
                 pass
             curses.noecho()
             self.show_error("Invalid repository number!")
-    
+        
     def disk_partition(self) -> bool:
-        """Handle disk partitioning"""
+        """Handle disk partitioning with interactive cfdisk"""
         # Disk selection
         disks = self.get_disks()
         if not disks:
@@ -193,13 +193,32 @@ class MainiXInstaller:
             return False
         self.disk = disks[disk_choice][0]
         
-        # Partitioning
-        if not self.run_command(f"cfdisk {self.disk}", "Partitioning disk..."):
+        # Launch cfdisk interactively
+        self.stdscr.clear()
+        self.stdscr.refresh()
+        
+        # Save current terminal settings
+        subprocess.run("stty sane", shell=True)
+        
+        # Run cfdisk in foreground
+        try:
+            cfdisk_result = subprocess.run(
+                f"cfdisk {self.disk}",
+                shell=True,
+                check=True
+            )
+        except subprocess.CalledProcessError as e:
+            self.show_error(f"cfdisk failed: {str(e)}")
             return False
+        finally:
+            # Restore curses window
+            curses.endwin()
+            self.stdscr.refresh()
         
         # Refresh partition table
-        self.run_command(f"partprobe {self.disk}", "Refreshing partitions...")
-        time.sleep(2)
+        self.draw_progress("Refreshing partition table...")
+        subprocess.run(f"partprobe {self.disk}", shell=True)
+        time.sleep(2)  # Wait for changes to be detected
         
         # Partition selection
         partitions = self.get_partitions()
@@ -220,8 +239,7 @@ class MainiXInstaller:
             self.show_error(f"Partition {self.root_part} not found!")
             return False
             
-        return True
-    
+        return True    
     def get_disks(self) -> List[Tuple[str, str]]:
         """Get list of available disks"""
         disks = []
