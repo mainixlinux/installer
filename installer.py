@@ -5,8 +5,8 @@ import time
 import sys
 import os
 import shutil
-from typing import List, Tuple
-
+from typing import List, Tuple, Optional
+# если ты это читаешь иди нахуй отсюда опенсурса не сущевствует
 class MainiXInstaller:
     def __init__(self, stdscr):
         self.stdscr = stdscr
@@ -16,7 +16,7 @@ class MainiXInstaller:
             "Select Repository",
             "Disk Partitioning",
             "User Accounts",
-            "System Installation", 
+            "System Installation",
             "System Configuration",
             "Bootloader Installation",
             "Completion"
@@ -39,43 +39,51 @@ class MainiXInstaller:
         self.stdscr.clear()
         h, w = self.stdscr.getmaxyx()
         
-        # Draw steps
         for i, step in enumerate(self.steps):
             color = curses.color_pair(1) if i == self.current_step else curses.color_pair(2)
             self.stdscr.addstr(i+2, 2, f"{'>>' if i == self.current_step else '  '} {step}", color)
         
-        # Status message
         self.stdscr.addstr(h-3, 2, f"Action: {message}", curses.color_pair(3))
         
-        # Progress bar
         progress = int((self.current_step / (len(self.steps)-1)) * 100) if len(self.steps) > 1 else 0
         progress_bar = '#' * (progress//10) + ' ' * (10 - (progress//10))
         self.stdscr.addstr(h-2, 2, f"Progress: [{progress_bar}] {progress}%")
         
-        # Show last log entries
         self.show_log_tail()
-        
         self.stdscr.refresh()
     
     def show_log_tail(self, lines: int = 5) -> None:
         """Show last lines from log file"""
         if os.path.exists(self.log_file):
-            with open(self.log_file, 'r') as f:
-                log_lines = f.readlines()[-lines:]
-            h, w = self.stdscr.getmaxyx()
-            for i, line in enumerate(log_lines):
-                self.stdscr.addstr(h-10+i, 2, line.strip()[:w-4])
+            try:
+                with open(self.log_file, 'r') as f:
+                    log_lines = f.readlines()[-lines:]
+                h, w = self.stdscr.getmaxyx()
+                for i, line in enumerate(log_lines):
+                    if i < h-12:
+                        self.stdscr.addstr(h-12+i, 2, line.strip()[:w-4])
+            except Exception:
+                pass
+    
+    def log_command(self, cmd: str) -> None:
+        """Log command execution"""
+        with open(self.log_file, 'a') as f:
+            f.write(f"\n=== Executing: {cmd} ===\n")
+    
+    def log_output(self, stdout: str, stderr: str) -> None:
+        """Log command output"""
+        with open(self.log_file, 'a') as f:
+            if stdout:
+                f.write(f"STDOUT: {stdout}\n")
+            if stderr:
+                f.write(f"STDERR: {stderr}\n")
     
     def run_command(self, cmd: str, message: str, background: bool = False) -> bool:
-        """Execute a command either in foreground or background TTY"""
+        """Execute a command either in foreground or background"""
         self.draw_progress(message)
-        
-        # Log the command
-        with open(self.log_file, 'a') as log:
-            log.write(f"\n=== Executing: {cmd} ===\n")
+        self.log_command(cmd)
         
         if background:
-            # Run in separate screen session with logging
             screen_cmd = (
                 f"screen -L -Logfile {self.log_file} -S {self.screen_session} -dm "
                 f"bash -c '{cmd}; echo $? > /tmp/mainix_exit_code'"
@@ -90,30 +98,26 @@ class MainiXInstaller:
         else:
             try:
                 result = subprocess.run(
-                    cmd, 
-                    shell=True, 
+                    cmd,
+                    shell=True,
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True
                 )
-                with open(self.log_file, 'a') as log:
-                    if result.stdout:
-                        log.write(f"STDOUT: {result.stdout}\n")
-                    if result.stderr: 
-                        log.write(f"STDERR: {result.stderr}\n")
+                self.log_output(result.stdout, result.stderr)
                 return True
             except subprocess.CalledProcessError as e:
+                self.log_output(e.stdout, e.stderr)
                 self.show_error(e.stderr if e.stderr else str(e), cmd)
                 return False
     
     def check_background_task(self, timeout: int = 3600) -> bool:
-        """Wait for background task to complete with timeout"""
+        """Wait for background task to complete"""
         start_time = time.time()
         while time.time() - start_time < timeout:
-            # Check if screen session still exists
             if subprocess.run(
-                f"screen -list | grep -q {self.screen_session}", 
+                f"screen -list | grep -q {self.screen_session}",
                 shell=True
             ).returncode != 0:
                 break
@@ -124,7 +128,6 @@ class MainiXInstaller:
             self.show_error("Background task timed out")
             return False
         
-        # Check exit code
         try:
             with open('/tmp/mainix_exit_code', 'r') as f:
                 exit_code = int(f.read().strip())
@@ -134,7 +137,7 @@ class MainiXInstaller:
             return False
     
     def show_error(self, error: str, cmd: str = None) -> None:
-        """Display error message and wait for user input"""
+        """Display error message"""
         h, w = self.stdscr.getmaxyx()
         
         self.stdscr.addstr(h-8, 2, "ERROR!", curses.color_pair(4))
@@ -147,7 +150,7 @@ class MainiXInstaller:
         self.stdscr.getch()
     
     def internet_setup(self) -> bool:
-        """Test and configure internet connection"""
+        """Configure internet connection"""
         if not self.run_command("ping -c 1 8.8.8.8", "Testing connection..."):
             if not self.run_command("iwctl", "Starting WiFi setup...", background=True):
                 return False
@@ -162,147 +165,162 @@ class MainiXInstaller:
             for i, repo in enumerate(self.repositories):
                 self.stdscr.addstr(10+i, 2, f"{i+1}. {repo}")
             
-            self.stdscr.addstr(14, 2, "Select repository (number): ")
-            curses.echo()
-            try:
-                repo_input = self.stdscr.getstr(14, 28, 2).decode()
-                repo_num = int(repo_input)
-                if 1 <= repo_num <= len(self.repositories):
-                    self.repo = repo_num - 1
-                    curses.noecho()
-                    return True
-            except (ValueError, curses.error):
-                pass
-            curses.noecho()
-            self.show_error("Invalid repository number!")
-        
+            choice = self.get_user_choice(len(self.repositories), "Select repository (number): ")
+            if choice is None:
+                return False
+            
+            self.repo = choice
+            return True
+    
     def disk_partition(self) -> bool:
-        """Handle disk partitioning with interactive cfdisk"""
+        """Interactive disk partitioning"""
         # Disk selection
-        disks = self.get_disks()
+        disks = self.get_available_disks()
         if not disks:
             self.show_error("No suitable disks found!")
             return False
         
-        disk_choice = self.show_menu(
-            "Select installation disk",
-            [d[1] for d in disks],
-            "Select disk (number): "
-        )
+        self.draw_progress("Select installation disk")
+        for i, (dev, size, model) in enumerate(disks):
+            self.stdscr.addstr(10+i, 2, f"{i+1}. {dev} ({size}, {model})")
+        
+        disk_choice = self.get_user_choice(len(disks), "Select disk (number): ")
         if disk_choice is None:
             return False
         self.disk = disks[disk_choice][0]
         
-        # Launch cfdisk interactively
-        self.stdscr.clear()
-        self.stdscr.refresh()
-        
-        # Save current terminal settings
-        subprocess.run("stty sane", shell=True)
-        
-        # Run cfdisk in foreground
-        try:
-            cfdisk_result = subprocess.run(
-                f"cfdisk {self.disk}",
-                shell=True,
-                check=True
-            )
-        except subprocess.CalledProcessError as e:
-            self.show_error(f"cfdisk failed: {str(e)}")
+        # Interactive cfdisk
+        if not self.run_interactive_cfdisk():
             return False
-        finally:
-            # Restore curses window
-            curses.endwin()
-            self.stdscr.refresh()
         
-        # Refresh partition table
-        self.draw_progress("Refreshing partition table...")
-        subprocess.run(f"partprobe {self.disk}", shell=True)
-        time.sleep(2)  # Wait for changes to be detected
+        # Wait and refresh partition table
+        time.sleep(2)
+        self.run_command(f"partprobe {self.disk}", "Refreshing partition table...")
+        time.sleep(2)
         
         # Partition selection
-        partitions = self.get_partitions()
+        partitions = self.get_disk_partitions()
         if not partitions:
-            self.show_error("No partitions found! Did you create and write them in cfdisk?")
+            self.show_error("No partitions found! Please:")
+            self.stdscr.addstr(21, 2, "1. Create partitions in cfdisk")
+            self.stdscr.addstr(22, 2, "2. Select 'Write' to save changes")
+            self.stdscr.addstr(23, 2, "3. Make sure partition table type is correct")
+            self.stdscr.getch()
             return False
         
-        part_choice = self.show_menu(
-            "Select root partition",
-            [p[1] for p in partitions],
-            "Select partition (number): "
-        )
+        self.draw_progress("Select root partition")
+        for i, (dev, size, fstype) in enumerate(partitions):
+            self.stdscr.addstr(10+i, 2, f"{i+1}. {dev} ({size}, {fstype})")
+        
+        part_choice = self.get_user_choice(len(partitions), "Select partition (number): ")
         if part_choice is None:
             return False
-        
         self.root_part = partitions[part_choice][0]
-        if not os.path.exists(self.root_part):
-            self.show_error(f"Partition {self.root_part} not found!")
+        
+        # Verify partition
+        if not self.verify_partition():
             return False
             
-        return True    
-    def get_disks(self) -> List[Tuple[str, str]]:
+        return True
+    
+    def get_available_disks(self) -> List[Tuple[str, str, str]]:
         """Get list of available disks"""
-        disks = []
         try:
-            lsblk_output = subprocess.getoutput(
-                "lsblk -d -n -o NAME,SIZE,MODEL"
-            ).split('\n')
+            output = subprocess.check_output(
+                "lsblk -d -n -o NAME,SIZE,MODEL,PATH,RO,RM,ROTA",
+                shell=True,
+                universal_newlines=True
+            ).splitlines()
             
-            for line in lsblk_output:
+            disks = []
+            for line in output:
                 if line.strip():
-                    parts = line.split(maxsplit=2)
-                    disk_name = parts[0]
-                    # Exclude loop devices and partitions
-                    if not disk_name.startswith('loop') and not any(c.isdigit() for c in disk_name):
-                        size = parts[1]
-                        model = parts[2] if len(parts) > 2 else "Unknown"
-                        disks.append((f"/dev/{disk_name}", f"{disk_name} ({size}, {model})"))
+                    parts = line.split(maxsplit=6)
+                    # Skip read-only and removable devices
+                    if parts[4] == '0' and parts[5] == '0':
+                        disks.append((f"/dev/{parts[0]}", parts[1], parts[2]))
+            return disks
         except Exception as e:
-            self.show_error(f"Error getting disk list: {str(e)}")
-        return disks
+            self.log_output("", f"Failed to get disks: {e}")
+            return []
     
-    def get_partitions(self) -> List[Tuple[str, str]]:
-        """Get list of partitions on selected disk"""
-        partitions = []
+    def run_interactive_cfdisk(self) -> bool:
+        """Run cfdisk in interactive mode"""
+        self.stdscr.clear()
+        self.stdscr.refresh()
+        curses.endwin()  # Temporarily disable curses
+        
         try:
-            lsblk_output = subprocess.getoutput(
-                f"lsblk -l -n -o NAME,SIZE,FSTYPE {self.disk}"
-            ).split('\n')
-            
-            for line in lsblk_output:
-                if line.strip() and not line.startswith(self.disk[5:]):
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        part_name = parts[0]
-                        size = parts[1]
-                        fstype = parts[2] if len(parts) > 2 else "unknown"
-                        partitions.append((f"/dev/{part_name}", f"{part_name} ({size}, {fstype})"))
+            # Reset terminal and run cfdisk
+            subprocess.run("stty sane", shell=True)
+            result = subprocess.run(
+                f"cfdisk {self.disk}",
+                shell=True
+            )
+            return result.returncode == 0
         except Exception as e:
-            self.show_error(f"Error getting partition list: {str(e)}")
-        return partitions
+            self.log_output("", f"cfdisk failed: {e}")
+            return False
+        finally:
+            # Restore curses
+            curses.flushinp()
+            self.stdscr.refresh()
+            curses.doupdate()
     
-    def show_menu(self, title: str, items: List[str], prompt: str) -> int:
-        """Display a menu and get user selection"""
+    def get_disk_partitions(self) -> List[Tuple[str, str, str]]:
+        """Get partitions on selected disk"""
+        try:
+            output = subprocess.check_output(
+                f"lsblk -l -n -o NAME,SIZE,FSTYPE,MOUNTPOINT {self.disk}",
+                shell=True,
+                universal_newlines=True
+            ).splitlines()
+            
+            partitions = []
+            for line in output:
+                if line.strip() and not line.startswith(self.disk[5:]):
+                    parts = line.split(maxsplit=3)
+                    if len(parts) >= 3:
+                        # Skip extended and swap partitions
+                        if not any(x in parts[2].lower() for x in ['extended', 'swap']):
+                            partitions.append((f"/dev/{parts[0]}", parts[1], parts[2]))
+            return partitions
+        except Exception as e:
+            self.log_output("", f"Failed to get partitions: {e}")
+            return []
+    
+    def verify_partition(self) -> bool:
+        """Verify partition exists and is usable"""
+        checks = [
+            f"test -b {self.root_part}",
+            f"lsblk -n -o FSTYPE {self.root_part} | grep -v '^$'",
+            f"blockdev --getsize64 {self.root_part} | grep -v '^0$'"
+        ]
+        
+        for check in checks:
+            if subprocess.call(check, shell=True) != 0:
+                self.show_error(f"Partition verification failed: {check}")
+                return False
+        return True
+    
+    def get_user_choice(self, max_num: int, prompt: str) -> Optional[int]:
+        """Get validated user choice"""
         while True:
-            self.draw_progress(title)
-            
-            for i, item in enumerate(items):
-                self.stdscr.addstr(10+i, 2, f"{i+1}. {item}")
-            
-            self.stdscr.addstr(10+len(items)+1, 2, prompt)
+            self.stdscr.addstr(20, 2, prompt)
             curses.echo()
             try:
-                user_input = self.stdscr.getstr(10+len(items)+1, len(prompt)+2, 3).decode().strip()
-                if user_input.upper() == 'Q':
+                choice = self.stdscr.getstr(20, len(prompt)+2, 3).decode()
+                if choice.lower() == 'q':
+                    curses.noecho()
                     return None
-                choice = int(user_input) - 1
-                if 0 <= choice < len(items):
+                choice = int(choice) - 1
+                if 0 <= choice < max_num:
                     curses.noecho()
                     return choice
             except (ValueError, curses.error):
                 pass
             curses.noecho()
-            self.show_error("Invalid selection!")
+            self.show_error(f"Please enter number 1-{max_num} or Q to cancel")
     
     def user_setup(self) -> bool:
         """Configure user accounts"""
@@ -469,13 +487,18 @@ ID=mainix'''
         os.execl(python, python, *sys.argv)
 
 def main(stdscr):
+    # Check for required tools
+    required_tools = ["screen", "lsblk", "partprobe", "cfdisk"]
+    missing = [tool for tool in required_tools if not shutil.which(tool)]
+    
+    if missing:
+        stdscr.addstr(0, 0, f"Error: Missing required tools: {', '.join(missing)}")
+        stdscr.addstr(1, 0, "Press any key to exit...")
+        stdscr.getch()
+        sys.exit(1)
+    
     installer = MainiXInstaller(stdscr)
     installer.run()
 
 if __name__ == "__main__":
-    # Check for required tools
-    if not shutil.which("screen"):
-        print("Error: 'screen' is required but not installed")
-        sys.exit(1)
-    
     curses.wrapper(main)
