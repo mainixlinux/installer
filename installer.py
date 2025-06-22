@@ -4,14 +4,12 @@ import subprocess
 import getpass
 import shutil
 import locale
-
-# хватит код читать, иди травки потрогай)
+#ыъъыъыъыъыъыъъыъыъъыъыъыъъыъыъ
 locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 os.environ['LANG'] = 'en_US.UTF-8'
 os.environ['LC_ALL'] = 'en_US.UTF-8'
 
 def run_command(cmd, check=True):
-    """Execute shell command with UTF-8 encoding"""
     print(f"Executing: {cmd}")
     try:
         result = subprocess.run(
@@ -46,7 +44,7 @@ def get_input(prompt, default=None):
     return response.encode('utf-8', errors='replace').decode('utf-8')
 
 def main():
-    print("=== Installing MainiX ===")
+    print("=== Install MainiX ===")
     
     print("\n=== Disk Partitioning (MBR) ===")
     disks = subprocess.getoutput("lsblk -d -o NAME -n").split()
@@ -68,8 +66,9 @@ def main():
     user_password = getpass.getpass("User password: ")
     root_password = getpass.getpass("Root password: ")
     
-    print("\n=== Installing Base System ===")=
+    print("\n=== Installing Base System ===")
     run_command("debootstrap stable /mnt http://deb.debian.org/debian/")
+    
     run_command("chroot /mnt apt-get install -y locales")
     run_command("chroot /mnt sed -i 's/^# en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen")
     run_command("chroot /mnt locale-gen en_US.UTF-8")
@@ -91,9 +90,9 @@ VERSION="2 (Oak)"
 VERSION_CODENAME=oak
 ID=mainix
 ID_LIKE=debian
-HOME_URL="https://mainix.c9t.ru/"
-SUPPORT_URL="https://mainix.c9t.ru/telegram/"
-BUG_REPORT_URL="https://mainix.c9t.ru/tgbugtracker/"
+HOME_URL="https://mainix.org/"
+SUPPORT_URL="https://mainix.org/support/"
+BUG_REPORT_URL="https://mainix.org/bugs/"
 """
     with open('/mnt/etc/os-release', 'w', encoding='utf-8') as f:
         f.write(os_release)
@@ -113,7 +112,7 @@ BUG_REPORT_URL="https://mainix.c9t.ru/tgbugtracker/"
         run_command("chroot /mnt gsettings set org.gnome.desktop.background picture-uri 'file:///usr/share/backgrounds/wallpaper.png'")
         run_command("chroot /mnt gsettings set org.gnome.desktop.background picture-options 'scaled'")
     
-    print("\n=== Installing GRUB ===")
+    print("\n=== Installing GRUB (MBR) ===")
     run_command("chroot /mnt apt-get install -y grub-pc")
     run_command("mount --bind /dev /mnt/dev")
     run_command("mount --bind /proc /mnt/proc")
