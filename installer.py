@@ -105,7 +105,7 @@ BUG_REPORT_URL="https://mainix.org/bugs/"
     run_command("chroot /mnt gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark'")
     run_command("chroot /mnt gsettings set org.gnome.desktop.interface icon-theme 'Adwaita'")
     
-    if os.path.exists("wallpaper.png"):
+    if os.path.exists("wallpaper.jpg"):
         wallpaper_dir = "/mnt/usr/share/backgrounds/"
         os.makedirs(wallpaper_dir, exist_ok=True)
         shutil.copy("wallpaper.png", wallpaper_dir)
@@ -120,7 +120,7 @@ BUG_REPORT_URL="https://mainix.org/bugs/"
     run_command(f"chroot /mnt grub-install {disk_dev}")
     run_command("chroot /mnt update-grub")
     
-    if os.path.exists("grub.png"):
+    if os.path.exists("grub.jpg"):
         grub_wallpaper_dir = "/mnt/boot/grub/"
         shutil.copy("grub.png", grub_wallpaper_dir)
         run_command("chroot /mnt sed -i 's/^#GRUB_BACKGROUND=.*/GRUB_BACKGROUND=\"\\/boot\\/grub\\/grub.png\"/' /etc/default/grub")
