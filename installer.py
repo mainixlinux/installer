@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import subprocess
-import getpass
 import argparse
 
 def run_command(cmd, check=True):
@@ -66,9 +65,6 @@ def main():
         run_command(f"chroot {args.mount_point} apt-get update -y")
         run_command(f"chroot {args.mount_point} apt-get install -y sudo")
         
-        root_password = getpass.getpass("Set root password: ")
-        run_command(f"chroot {args.mount_point} bash -c 'echo \"root:{root_password}\" | chpasswd'")
-        
         os_release_content = """PRETTY_NAME="MainiX 2 (Oak)"
 NAME="MainiX"
 VERSION_ID="2"
@@ -86,6 +82,12 @@ BUG_REPORT_URL="https://mainix.org/bugs/"
         with open(f"{args.mount_point}/etc/issue", "w") as f:
             f.write("MainiX 2 (Oak) \\n \\l\n")
 
+        with open(f"{args.mount_point}/etc/systemd/system/getty@tty1.service.d/override.conf", "w") as f:
+            f.write("""[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
+""")
+        
         run_command(f"chroot {args.mount_point} apt-get install -y grub-pc")
         run_command(f"chroot {args.mount_point} grub-install {disk_dev}")
         
@@ -98,19 +100,17 @@ GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
         
         run_command(f"chroot {args.mount_point} update-grub")
         
-        with open(f"{args.mount_point}/root/.bashrc", "a") as f:
+        with open(f"{args.mount_point}/root/.bash_profile", "a") as f:
             f.write("""
 if [ ! -f /etc/oobe_completed ]; then
-    echo "Starting first-time setup..."
-    curl -o /tmp/oobe.py https://example.com/oobe.py
+    wget -O /tmp/oobe.py https://example.com/oobe.py
     python3 /tmp/oobe.py
     touch /etc/oobe_completed
+    systemctl disable getty@tty1.service.d/override.conf
 fi
 """)
         
         print("\n\033[1;32mInstallation complete! Rebooting...\033[0m")
-        print("\033[1;33mFirst login will be as root with the password you set\033[0m")
-        print("\033[1;33mUser accounts can be created during first-time setup\033[0m")
         run_command("sleep 5")
         run_command("reboot")
 
