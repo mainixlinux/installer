@@ -34,32 +34,34 @@ def get_input(prompt, default=None):
         return response or default
     return input(f"{prompt}: ").strip()
 
+def manual_partitioning(disk_dev):
+    """Manual disk partitioning using cfdisk"""
+    print(f"\nStarting manual partitioning for {disk_dev}")
+    print("Please create at least one root partition (/) and optionally swap")
+    print("Set the bootable flag for your root partition")
+    input("Press Enter to launch cfdisk...")
+    run_command(f"cfdisk {disk_dev}")
+    
+    partitions = subprocess.getoutput(f"lsblk -ln {disk_dev} | grep part | awk '{{print $1}}'").split()
+    print(f"\nAvailable partitions: {partitions}")
+    root_part = get_input("Enter root partition (e.g., sda1)")
+    return f"/dev/{root_part}"
+
 def main():
     print("=== MainiX Installation ===")
     
     print("\n=== Manual Disk Partitioning ===")
     disks = subprocess.getoutput("lsblk -d -o NAME -n").split()
     print(f"Available disks: {', '.join(disks)}")
-    disk = get_input("Select disk to partition (e.g., sda)")
+    disk = get_input("Select disk to install (e.g., sda)")
     disk_dev = f"/dev/{disk}"
     
-    print(f"\nLaunching cfdisk for manual partitioning on {disk_dev}")
-    print("Please create at least one partition and set its type to 'Linux'")
-    print("Don't forget to mark bootable partition (usually the first one)")
-    print("Write changes before exiting!")
-    run_command(f"cfdisk {disk_dev}")
+    root_part = manual_partitioning(disk_dev)
     
-    partitions = subprocess.getoutput(f"lsblk -lno NAME {disk_dev} | tail -n +2").split()
-    if not partitions:
-        print("Error: No partitions found!")
-        return
+    print(f"\nFormatting {root_part} as ext4...")
+    run_command(f"mkfs.ext4 -F {root_part}")
     
-    print(f"\nAvailable partitions: {', '.join(partitions)}")
-    root_part = get_input("Select root partition (e.g., sda1)")
-    root_dev = f"/dev/{root_part}"
-    
-    run_command(f"mkfs.ext4 -F {root_dev}")
-    run_command(f"mount {root_dev} /mnt")
+    run_command(f"mount {root_part} /mnt")
     
     print("\n=== User Configuration ===")
     hostname = get_input("Hostname", "mainix")
@@ -78,7 +80,6 @@ def main():
     run_command(f"chroot /mnt sh -c 'echo \"{username}:{user_password}\" | chpasswd'")
     run_command(f"chroot /mnt sh -c 'echo \"root:{root_password}\" | chpasswd'")
     
-    print("\n=== System Branding ===")
     os_release = """PRETTY_NAME="MainiX 2 (Oak)"
 NAME="MainiX"
 VERSION_ID="2"
@@ -86,9 +87,9 @@ VERSION="2 (Oak)"
 VERSION_CODENAME=oak
 ID=mainix
 ID_LIKE=debian
-HOME_URL="https://mainix.org/"
-SUPPORT_URL="https://mainix.org/support/"
-BUG_REPORT_URL="https://mainix.org/bugs/"
+HOME_URL="https://mainix.c9t.ru/"
+SUPPORT_URL="https://mainix.c9t.ru/tg/"
+BUG_REPORT_URL="https://mainix.c9t.ru/bugtracker/"
 """
     with open('/mnt/etc/os-release', 'w') as f:
         f.write(os_release)
@@ -96,32 +97,24 @@ BUG_REPORT_URL="https://mainix.org/bugs/"
     print("\n=== Installing Budgie Desktop ===")
     run_command("chroot /mnt apt-get update -y")
     run_command("chroot /mnt apt-get install -y budgie-desktop lightdm")
-    run_command("chroot /mnt apt-get install -y adwaita-icon-theme-full")
     
-    run_command("chroot /mnt gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark'")
-    run_command("chroot /mnt gsettings set org.gnome.desktop.interface icon-theme 'Adwaita'")
-    
-    print("\n=== Installing GRUB with MainiX Branding ===")
+    print("\n=== Installing and Configuring GRUB ===")
     run_command("chroot /mnt apt-get install -y grub-pc")
+    
     run_command("mount --bind /dev /mnt/dev")
     run_command("mount --bind /proc /mnt/proc")
     run_command("mount --bind /sys /mnt/sys")
     
+    run_command(f"chroot /mnt grub-install {disk_dev}")
+    
     grub_custom = """GRUB_DISTRIBUTOR="MainiX"
-GRUB_BACKGROUND="/boot/grub/mainix-grub.png"
-GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
-GRUB_THEME="/boot/grub/theme/theme.txt"
+GRUB_BACKGROUND="/boot/grub/grub.png"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet"
 """
     with open('/mnt/etc/default/grub', 'a') as f:
         f.write(grub_custom)
     
-    run_command(f"chroot /mnt grub-install {disk_dev}")
     run_command("chroot /mnt update-grub")
-    
-    if os.path.exists("grub.png"):
-        grub_wallpaper_dir = "/mnt/boot/grub/"
-        os.makedirs(grub_wallpaper_dir, exist_ok=True)
-        shutil.copy("grub.png", f"{grub_wallpaper_dir}/mainix-grub.png")
     
     print("\n=== Installation Complete! ===")
     print("System will reboot in 10 seconds...")
