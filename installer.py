@@ -49,7 +49,7 @@ def main():
     disk = get_input("Select disk to install (e.g., sda)").strip()
     disk_dev = f"/dev/{disk}"
     
-    run_command(f"cfdisk", {disk_dev}1)
+    run_command(f"cfdisk" {disk_dev}1)
     run_command(f"mkfs.ext4 -F {disk_dev}1")
     
     run_command(f"mount {disk_dev}1 /mnt")
