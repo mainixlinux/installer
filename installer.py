@@ -28,15 +28,14 @@ def run_command(cmd, check=True):
         return e
 
 def manual_partitioning(disk_dev):
+    """Manual disk partitioning with proper terminal size"""
     print("\n\033[1;32m=== Disk Partitioning ===\033[0m")
     print("Please create at least one root partition (/)")
     print("Set the bootable flag for your root partition")
     
-    # Reset terminal for cfdisk
     run_command("stty sane")
     run_command("reset")
     
-    # Run cfdisk with clean terminal
     run_command(f"cfdisk {disk_dev}")
     
     partitions = subprocess.getoutput(f"lsblk -ln {disk_dev} | grep part | awk '{{print $1}}'").split()
@@ -74,8 +73,34 @@ def main():
         run_command(f"chroot {args.mount_point} passwd {username}")
         run_command("chroot {args.mount_point} passwd root")
         
+        os_release_content = """PRETTY_NAME="MainiX 2 (Oak)"
+NAME="MainiX"
+VERSION_ID="2"
+VERSION="2 (Oak)"
+VERSION_CODENAME=oak
+ID=mainix
+ID_LIKE=debian
+HOME_URL="https://mainix.org/"
+SUPPORT_URL="https://mainix.org/support/"
+BUG_REPORT_URL="https://mainix.org/bugs/"
+"""
+        with open(f"{args.mount_point}/etc/os-release", "w") as f:
+            f.write(os_release_content)
+        
+        with open(f"{args.mount_point}/etc/issue", "w") as f:
+            f.write("MainiX 2 (Oak) \\n \\l\n")
+
         run_command(f"chroot {args.mount_point} apt-get install -y grub-pc")
         run_command(f"chroot {args.mount_point} grub-install {disk_dev}")
+        
+        grub_custom = """GRUB_DISTRIBUTOR="MainiX"
+GRUB_THEME="/boot/grub/theme/theme.txt"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+"""
+        with open(f"{args.mount_point}/etc/default/grub", "a") as f:
+            f.write(grub_custom)
+        
+        run_command(f"chroot {args.mount_point} update-grub")
         
         with open(f"{args.mount_point}/etc/profile.d/oobe.sh", "w") as f:
             f.write("""#!/bin/sh
