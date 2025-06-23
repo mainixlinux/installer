@@ -5,9 +5,6 @@ import getpass
 import shutil
 import locale
 #ыъъыъыъыъыъыъъыъыъъыъыъыъъыъыъ
-locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
-os.environ['LANG'] = 'en_US.UTF-8'
-os.environ['LC_ALL'] = 'en_US.UTF-8'
 
 def run_command(cmd, check=True):
     print(f"Executing: {cmd}")
