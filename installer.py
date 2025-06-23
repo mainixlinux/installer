@@ -47,7 +47,7 @@ def main():
     print("Please create at least one partition and set its type to 'Linux'")
     print("Don't forget to mark bootable partition (usually the first one)")
     print("Write changes before exiting!")
-    run_command(f"cfdisk {disk_dev}", check=False)
+    run_command(f"cfdisk {disk_dev}")
     
     partitions = subprocess.getoutput(f"lsblk -lno NAME {disk_dev} | tail -n +2").split()
     if not partitions:
