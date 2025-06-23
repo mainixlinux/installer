@@ -81,9 +81,16 @@ def main():
     with open('/mnt/etc/hostname', 'w') as f:
         f.write(hostname)
     
-    run_command(f"chroot /mnt useradd -m -G sudo -s /bin/bash {username}")
-    run_command(f"chroot /mnt sh -c 'echo \"{username}:{user_password}\" | chpasswd'")
-    run_command(f"chroot /mnt sh -c 'echo \"root:{root_password}\" | chpasswd'")
+    print("\n=== Installing essential packages ===")
+    run_command("chroot /mnt apt-get update -y")
+    run_command("chroot /mnt apt-get install -y sudo passwd login")
+    
+    print("\n=== Creating user account ===")
+    username = "user"
+    run_command(f"chroot /mnt bash -c 'mkdir -p /etc/skel && useradd --create-home --shell /bin/bash {username}'")
+    run_command(f"chroot /mnt bash -c 'echo \"{username}:password123\" | chpasswd'")
+    run_command(f"chroot /mnt bash -c 'usermod -aG sudo {username}'")
+    run_command("chroot /mnt bash -c 'echo \"root:rootpassword\" | chpasswd'")
 
     os_release = """PRETTY_NAME="MainiX 2 (Oak)"
 NAME="MainiX"
