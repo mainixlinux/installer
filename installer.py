@@ -49,10 +49,7 @@ def main():
     disk = get_input("Select disk to install (e.g., sda)").strip()
     disk_dev = f"/dev/{disk}"
     
-    print(f"\nPartitioning {disk_dev} with MBR...")
-    run_command(f"parted -s {disk_dev} mklabel msdos")
-    run_command(f"parted -s {disk_dev} mkpart primary ext4 1MiB 100%")
-    run_command(f"parted -s {disk_dev} set 1 boot on")
+    run_command(f"cfdisk", {disk_dev}1)
     run_command(f"mkfs.ext4 -F {disk_dev}1")
     
     run_command(f"mount {disk_dev}1 /mnt")
