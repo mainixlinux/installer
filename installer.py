@@ -7,6 +7,7 @@ import argparse
 import sys
 
 def run_command(cmd, check=True):
+    """Execute shell command with better error handling"""
     print(f"\n\033[1;34mExecuting: {cmd}\033[0m")
     try:
         result = subprocess.run(
@@ -36,7 +37,22 @@ def parse_arguments():
                       help='Resume installation from specific step (1-7)')
     parser.add_argument('--disk', help='Specify disk to use (e.g. sda)')
     parser.add_argument('--root-part', help='Specify root partition (e.g. sda1)')
+    parser.add_argument('--mount-point', default='/mnt', help='Specify mount point')
     return parser.parse_args()
+
+def ensure_mounted(args):
+    """Ensure required directories are mounted"""
+    required_mounts = {
+        '/dev': f"{args.mount_point}/dev",
+        '/proc': f"{args.mount_point}/proc", 
+        '/sys': f"{args.mount_point}/sys"
+    }
+    
+    for src, dest in required_mounts.items():
+        if not os.path.ismount(dest):
+            print(f"Mounting {src} to {dest}")
+            os.makedirs(dest, exist_ok=True)
+            run_command(f"mount --bind {src} {dest}")
 
 def step_partitioning(args):
     """Step 1: Disk partitioning"""
@@ -63,44 +79,52 @@ def step_partitioning(args):
     
     print(f"\nFormatting {root_part} as ext4...")
     run_command(f"mkfs.ext4 -F {root_part}")
-    run_command(f"mount {root_part} /mnt")
+    run_command(f"mount {root_part} {args.mount_point}")
     
     return disk_dev, root_part
 
-def step_base_install():
+def step_base_install(args):
     """Step 2: Base system installation"""
     print("\n\033[1;32m=== Step 2: Base System Installation ===\033[0m")
     run_command("pacman -Sy debootstrap --noconfirm")
-    run_command("debootstrap stable /mnt http://deb.debian.org/debian/")
-    
-    # Mount required for chroot
-    run_command("mount --bind /dev /mnt/dev")
-    run_command("mount --bind /proc /mnt/proc")
-    run_command("mount --bind /sys /mnt/sys")
+    run_command(f"debootstrap stable {args.mount_point} http://deb.debian.org/debian/")
+    ensure_mounted(args)
 
-def step_essential_packages():
+def step_essential_packages(args):
     """Step 3: Install essential packages"""
     print("\n\033[1;32m=== Step 3: Installing Essential Packages ===\033[0m")
-    run_command("chroot /mnt apt-get update -y")
-    run_command("chroot /mnt apt-get install -y sudo passwd login bash")
+    ensure_mounted(args)
+    run_command(f"chroot {args.mount_point} apt-get update -y")
+    run_command(f"chroot {args.mount_point} apt-get install -y sudo passwd login bash")
 
-def step_user_config():
+def step_user_config(args):
+    """Step 4: User configuration"""
     print("\n\033[1;32m=== Step 4: User Configuration ===\033[0m")
+    ensure_mounted(args)
+    
     hostname = input("Enter hostname [mainix]: ").strip() or "mainix"
     username = input("Enter username [user]: ").strip() or "user"
     user_password = getpass.getpass("Enter user password: ")
     root_password = getpass.getpass("Enter root password: ")
     
-    with open('/mnt/etc/hostname', 'w') as f:
+    with open(f'{args.mount_point}/etc/hostname', 'w') as f:
         f.write(hostname)
     
-    run_command(f"chroot /mnt bash -c 'mkdir -p /etc/skel'")
-    run_command(f"chroot /mnt bash -c 'useradd --create-home --shell /bin/bash {username}'")
-    run_command(f"chroot /mnt bash -c 'echo \"{username}:{user_password}\" | chpasswd'")
-    run_command(f"chroot /mnt bash -c 'usermod -aG sudo {username}'")
-    run_command(f"chroot /mnt bash -c 'echo \"root:{root_password}\" | chpasswd'")
+    # Check if user exists first
+    result = run_command(f"chroot {args.mount_point} id -u {username}", check=False)
+    if result.returncode != 0:
+        print(f"Creating user {username}")
+        run_command(f"chroot {args.mount_point} bash -c 'mkdir -p /etc/skel'")
+        run_command(f"chroot {args.mount_point} bash -c 'useradd --create-home --shell /bin/bash {username}'")
+    else:
+        print(f"User {username} already exists")
+    
+    run_command(f"chroot {args.mount_point} bash -c 'echo \"{username}:{user_password}\" | chpasswd'")
+    run_command(f"chroot {args.mount_point} bash -c 'usermod -aG sudo {username}'")
+    run_command(f"chroot {args.mount_point} bash -c 'echo \"root:{root_password}\" | chpasswd'")
 
-def step_system_branding():
+def step_system_branding(args):
+    """Step 5: System branding"""
     print("\n\033[1;32m=== Step 5: System Branding ===\033[0m")
     os_release = """PRETTY_NAME="MainiX 2 (Oak)"
 NAME="MainiX"
@@ -113,28 +137,30 @@ HOME_URL="https://mainix.org/"
 SUPPORT_URL="https://mainix.org/support/"
 BUG_REPORT_URL="https://mainix.org/bugs/"
 """
-    with open('/mnt/etc/os-release', 'w') as f:
+    with open(f'{args.mount_point}/etc/os-release', 'w') as f:
         f.write(os_release)
 
-def step_desktop_install():
-    """ШАГ 6, можно переключаться нормально, если читаешь иди нахуй"""
+def step_desktop_install(args):
+    """Step 6: Desktop environment installation"""
     print("\n\033[1;32m=== Step 6: Desktop Environment Installation ===\033[0m")
-    run_command("chroot /mnt apt-get install -y budgie-desktop lightdm")
+    ensure_mounted(args)
+    run_command(f"chroot {args.mount_point} apt-get install -y budgie-desktop lightdm")
 
-def step_grub_install(disk_dev):
+def step_grub_install(args, disk_dev):
     """Step 7: GRUB installation"""
     print("\n\033[1;32m=== Step 7: GRUB Installation ===\033[0m")
-    run_command("chroot /mnt apt-get install -y grub-pc")
-    run_command(f"chroot /mnt grub-install {disk_dev}")
+    ensure_mounted(args)
+    run_command(f"chroot {args.mount_point} apt-get install -y grub-pc")
+    run_command(f"chroot {args.mount_point} grub-install {disk_dev}")
     
     grub_custom = """GRUB_DISTRIBUTOR="MainiX"
 GRUB_BACKGROUND="/boot/grub/grub.png"
 GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 """
-    with open('/mnt/etc/default/grub', 'a') as f:
+    with open(f'{args.mount_point}/etc/default/grub', 'a') as f:
         f.write(grub_custom)
     
-    run_command("chroot /mnt update-grub")
+    run_command(f"chroot {args.mount_point} update-grub")
 
 def main():
     args = parse_arguments()
@@ -160,9 +186,9 @@ def main():
             elif i == 7:
                 if not disk_dev and args.disk:
                     disk_dev = f"/dev/{args.disk}"
-                step(disk_dev)
+                step(args, disk_dev)
             else:
-                step()
+                step(args)
                 
     except Exception as e:
         print(f"\n\033[1;31mInstallation failed at step {i}: {e}\033[0m")
