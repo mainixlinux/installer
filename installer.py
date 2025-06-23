@@ -5,7 +5,6 @@ import getpass
 import shutil
 
 def run_command(cmd, check=True):
-    """Execute shell command"""
     print(f"Executing: {cmd}")
     try:
         result = subprocess.run(
@@ -28,14 +27,12 @@ def run_command(cmd, check=True):
         return e
 
 def get_input(prompt, default=None):
-    """Get user input"""
     if default:
         response = input(f"{prompt} [{default}]: ").strip()
         return response or default
     return input(f"{prompt}: ").strip()
 
 def manual_partitioning(disk_dev):
-    """Manual disk partitioning using cfdisk"""
     print(f"\nStarting manual partitioning for {disk_dev}")
     print("Please create at least one root partition (/) and optionally swap")
     print("Set the bootable flag for your root partition")
@@ -63,15 +60,23 @@ def main():
     
     run_command(f"mount {root_part} /mnt")
     
+    print("\n=== Installing Base System ===")
+    run_command("pacman -Sy debootstrap --noconfirm")
+    run_command("debootstrap stable /mnt http://deb.debian.org/debian/")
+    
+    run_command("mount --bind /dev /mnt/dev")
+    run_command("mount --bind /proc /mnt/proc")
+    run_command("mount --bind /sys /mnt/sys")
+    
+    print("\n=== Installing essential packages ===")
+    run_command("chroot /mnt apt-get update -y")
+    run_command("chroot /mnt apt-get install -y sudo passwd")
+    
     print("\n=== User Configuration ===")
     hostname = get_input("Hostname", "mainix")
     username = get_input("Username", "user")
     user_password = getpass.getpass("User password: ")
     root_password = getpass.getpass("Root password: ")
-    
-    print("\n=== Installing Base System ===")
-    run_command("pacman -Sy debootstrap --noconfirm")
-    run_command("debootstrap stable /mnt http://deb.debian.org/debian/")
     
     with open('/mnt/etc/hostname', 'w') as f:
         f.write(hostname)
@@ -79,7 +84,7 @@ def main():
     run_command(f"chroot /mnt useradd -m -G sudo -s /bin/bash {username}")
     run_command(f"chroot /mnt sh -c 'echo \"{username}:{user_password}\" | chpasswd'")
     run_command(f"chroot /mnt sh -c 'echo \"root:{root_password}\" | chpasswd'")
-    
+
     os_release = """PRETTY_NAME="MainiX 2 (Oak)"
 NAME="MainiX"
 VERSION_ID="2"
@@ -87,29 +92,24 @@ VERSION="2 (Oak)"
 VERSION_CODENAME=oak
 ID=mainix
 ID_LIKE=debian
-HOME_URL="https://mainix.c9t.ru/"
-SUPPORT_URL="https://mainix.c9t.ru/tg/"
-BUG_REPORT_URL="https://mainix.c9t.ru/bugtracker/"
+HOME_URL="https://mainix.org/"
+SUPPORT_URL="https://mainix.org/support/"
+BUG_REPORT_URL="https://mainix.org/bugs/"
 """
     with open('/mnt/etc/os-release', 'w') as f:
         f.write(os_release)
     
     print("\n=== Installing Budgie Desktop ===")
-    run_command("chroot /mnt apt-get update -y")
     run_command("chroot /mnt apt-get install -y budgie-desktop lightdm")
     
     print("\n=== Installing and Configuring GRUB ===")
     run_command("chroot /mnt apt-get install -y grub-pc")
     
-    run_command("mount --bind /dev /mnt/dev")
-    run_command("mount --bind /proc /mnt/proc")
-    run_command("mount --bind /sys /mnt/sys")
-    
     run_command(f"chroot /mnt grub-install {disk_dev}")
     
     grub_custom = """GRUB_DISTRIBUTOR="MainiX"
 GRUB_BACKGROUND="/boot/grub/grub.png"
-GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 """
     with open('/mnt/etc/default/grub', 'a') as f:
         f.write(grub_custom)
