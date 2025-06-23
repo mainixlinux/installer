@@ -56,7 +56,6 @@ def ensure_ready(args):
             os.makedirs(dest, exist_ok=True)
             run_command(f"mount --bind {src} {dest}")
     
-    # Check if essential packages are installed when resuming
     if args.resume_from and args.resume_from >= 4:
         print("Checking essential packages...")
         result = run_command(f"chroot {args.mount_point} dpkg -l sudo", check=False)
@@ -99,6 +98,8 @@ def step_user_config(args):
     print("\n\033[1;32m=== Step 4: User Configuration ===\033[0m")
     ensure_ready(args)
     
+    run_command(f"chroot {args.mount_point} apt-get install -y adduser")
+    
     hostname = input("Enter hostname [mainix]: ").strip() or "mainix"
     username = input("Enter username [user]: ").strip() or "user"
     user_password = getpass.getpass("Enter user password: ")
@@ -111,8 +112,9 @@ def step_user_config(args):
     if result.returncode != 0:
         print(f"Creating user {username}")
         run_command(f"chroot {args.mount_point} bash -c 'mkdir -p /etc/skel'")
-        run_command(f"chroot {args.mount_point} bash -c 'adduser --disabled-password --gecos \"\" {username}'")
-        run_command(f"chroot {args.mount_point} bash -c 'usermod -aG sudo {username}'")
+        
+        run_command(f"chroot {args.mount_point} adduser --disabled-password --gecos \"\" {username}")
+        run_command(f"chroot {args.mount_point} usermod -aG sudo {username}")
     else:
         print(f"User {username} already exists")
     
