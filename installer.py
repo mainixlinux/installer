@@ -5,7 +5,6 @@ import getpass
 import argparse
 
 def run_command(cmd, check=True):
-    """Execute shell command with better error handling"""
     print(f"\n\033[1;34mExecuting: {cmd}\033[0m")
     try:
         result = subprocess.run(
@@ -65,13 +64,10 @@ def main():
         run_command(f"mount --bind /sys {args.mount_point}/sys")
         
         run_command(f"chroot {args.mount_point} apt-get update -y")
-        run_command(f"chroot {args.mount_point} apt-get install -y sudo adduser")
+        run_command(f"chroot {args.mount_point} apt-get install -y sudo")
         
-        username = input("Enter admin username [user]: ").strip() or "user"
-        run_command(f"chroot {args.mount_point} adduser --disabled-password --gecos '' {username}")
-        run_command(f"chroot {args.mount_point} usermod -aG sudo {username}")
-        run_command(f"chroot {args.mount_point} passwd {username}")
-        run_command("chroot {args.mount_point} passwd root")
+        root_password = getpass.getpass("Set root password: ")
+        run_command(f"chroot {args.mount_point} bash -c 'echo \"root:{root_password}\" | chpasswd'")
         
         os_release_content = """PRETTY_NAME="MainiX 2 (Oak)"
 NAME="MainiX"
@@ -95,24 +91,26 @@ BUG_REPORT_URL="https://mainix.org/bugs/"
         
         grub_custom = """GRUB_DISTRIBUTOR="MainiX"
 GRUB_THEME="/boot/grub/theme/theme.txt"
-GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
 """
         with open(f"{args.mount_point}/etc/default/grub", "a") as f:
             f.write(grub_custom)
         
         run_command(f"chroot {args.mount_point} update-grub")
         
-        with open(f"{args.mount_point}/etc/profile.d/oobe.sh", "w") as f:
-            f.write("""#!/bin/sh
+        with open(f"{args.mount_point}/root/.bashrc", "a") as f:
+            f.write("""
 if [ ! -f /etc/oobe_completed ]; then
+    echo "Starting first-time setup..."
     curl -o /tmp/oobe.py https://example.com/oobe.py
     python3 /tmp/oobe.py
     touch /etc/oobe_completed
 fi
 """)
-        run_command(f"chmod +x {args.mount_point}/etc/profile.d/oobe.sh")
         
         print("\n\033[1;32mInstallation complete! Rebooting...\033[0m")
+        print("\033[1;33mFirst login will be as root with the password you set\033[0m")
+        print("\033[1;33mUser accounts can be created during first-time setup\033[0m")
         run_command("sleep 5")
         run_command("reboot")
 
