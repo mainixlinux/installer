@@ -64,6 +64,7 @@ def main():
     root_password = getpass.getpass("Root password: ")
     
     print("\n=== Installing Base System ===")
+    run_command("pacman -Sy debootstrap")
     run_command("debootstrap stable /mnt http://deb.debian.org/debian/")
     
     run_command("chroot /mnt apt-get install -y locales")
