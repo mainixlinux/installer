@@ -72,9 +72,10 @@ BUG_REPORT_URL="https://mainix.org/bugs/"
         f.write("MainiX 2 (Oak) \\n \\l\n")
 
 def install_grub(mount_point, disk_dev):
-    run_command(f"chroot {mount_point} apt-get install -y linux-image-amd64")
-    run_command(f"chroot {mount_point} dpkg --configure -a")
-    run_command(f"chroot {mount_point} apt-get install -y grub-pc grub2-common")
+    run_command(f"chroot {mount_point} apt-get update")
+    run_command(f"chroot {mount_point} apt-get install -f -y")
+    run_command(f"chroot {mount_point} dpkg --configure -a", check=False)
+    run_command(f"chroot {mount_point} apt-get install -y linux-image-amd64 grub-pc grub2-common")
     run_command(f"chroot {mount_point} grub-install --target=i386-pc --recheck --force {disk_dev}")
     with open(f"{mount_point}/etc/default/grub", "w") as f:
         f.write('GRUB_DISTRIBUTOR="MainiX"\n')
@@ -98,7 +99,7 @@ ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
     with open(f"{mount_point}/root/.bash_profile", "a") as f:
         f.write("""
 if [ ! -f /etc/oobe_completed ]; then
-    echo "Starting MainiX OOBE setup..."
+    echo "Starting MainiX setup..."
     python3 /tmp/oobe.py
     rm -f /tmp/oobe.py
     systemctl disable getty@tty1.service.d/override.conf
@@ -125,13 +126,16 @@ def main():
         prepare_chroot(args.mount_point)
         setup_os_identity(args.mount_point)
         setup_autologin_oobe(args.mount_point)
+        
         print("\n\033[1;32m=== Installing GRUB ===\033[0m")
         try:
             install_grub(args.mount_point, disk_dev)
-        except subprocess.CalledProcessError:
-            print("\033[1;33mFirst GRUB install attempt failed, troubleshooting...\033[0m")
+        except subprocess.CalledProcessError as e:
+            print(f"\033[1;33mGRUB installation failed: {e}\033[0m")
+            print("\033[1;33mAttempting to fix packages...\033[0m")
             run_command(f"chroot {args.mount_point} apt-get install -f -y")
             run_command(f"chroot {args.mount_point} apt-get update")
+            run_command(f"chroot {args.mount_point} dpkg --configure -a", check=False)
             install_grub(args.mount_point, disk_dev)
         
         print("\n\033[1;32mInstallation complete! Rebooting...\033[0m")
