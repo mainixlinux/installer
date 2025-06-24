@@ -141,7 +141,7 @@ def main():
     
     run_command(["genfstab", "-U", "/mnt", ">>", "/mnt/etc/fstab"], shell=True)
     
-    chroot_commands = f"""
+    chroot_commands = """
     echo "{hostname}" > /etc/hostname
     ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
     echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
@@ -157,7 +157,7 @@ def main():
     sed -i 's/Arch Linux/MainiX 2 (Oak)/' /etc/os-release
     sed -i 's/ID=arch/ID=mainix/' /etc/os-release
     sed -i 's/NAME="Arch Linux"/NAME="MainiX 2 (Oak)"/' /etc/os-release
-    
+    """
     run_command(["arch-chroot", "/mnt", "bash", "-c", chroot_commands])
     
     print(msg["desktop_install"])
