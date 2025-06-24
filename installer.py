@@ -139,7 +139,7 @@ def main():
     user_password = getpass.getpass(msg["user_pass"])
     root_password = getpass.getpass(msg["root_pass"])
     
-    run_command(["genfstab", "-U", "/mnt", ">>", "/mnt/etc/fstab"], shell=True)
+    run_command(["genfstab", "-U", "/mnt", "-p", "/mnt/etc/fstab"])
     
     chroot_commands = """
     echo "{hostname}" > /etc/hostname
