@@ -29,7 +29,7 @@ def manual_partitioning(disk_dev):
     run_command("stty sane")
     time.sleep(1)
     
-    result = run_command(f"cfdisk {disk_dev}", check=False)
+    result = os.system(f"cfdisk {disk_dev}")
     if result.returncode != 0:
         raise Exception("Partitioning failed! Please try again.")
     
