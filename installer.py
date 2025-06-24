@@ -2,6 +2,7 @@
 import os
 import subprocess
 import argparse
+import time
 
 def run_command(cmd, check=True):
     print(f"\n\033[1;34mExecuting: {cmd}\033[0m")
@@ -17,16 +18,52 @@ def run_command(cmd, check=True):
         if check: raise
         return e
 
-def manual_partitioning(disk_dev):
-    print("\n\033[1;32m=== Disk Partitioning ===\033[0m")
-    run_command("stty sane")
-    run_command("reset")
-    os.system(f"cfdisk {disk_dev}")
+def prepare_chroot(mount_point):
+    required_mounts = [
+        ('/dev', f"{mount_point}/dev"),
+        ('/dev/pts', f"{mount_point}/dev/pts"),
+        ('/proc', f"{mount_point}/proc"),
+        ('/sys', f"{mount_point}/sys"),
+        ('/run', f"{mount_point}/run")
+    ]
     
-    partitions = subprocess.getoutput(
-        f"lsblk -ln {disk_dev} | grep part | awk '{{print $1}}'").split()
-    print(f"\nAvailable partitions: {partitions}")
-    return f"/dev/{input('Enter root partition (e.g., sda1): ').strip()}"
+    for src, dest in required_mounts:
+        if not os.path.exists(dest):
+            os.makedirs(dest, exist_ok=True)
+        if not os.path.ismount(dest):
+            run_command(f"mount --bind {src} {dest}")
+
+def setup_os_identity(mount_point):
+    os_release_content = """PRETTY_NAME="MainiX 2 (Oak)"
+NAME="MainiX"
+VERSION_ID="2"
+VERSION="2 (Oak)"
+VERSION_CODENAME=oak
+ID=mainix
+ID_LIKE=debian
+HOME_URL="https://mainix.org/"
+SUPPORT_URL="https://mainix.org/support/"
+BUG_REPORT_URL="https://mainix.org/bugs/"
+"""
+    with open(f"{mount_point}/etc/os-release", "w") as f:
+        f.write(os_release_content)
+    
+    with open(f"{mount_point}/etc/issue", "w") as f:
+        f.write("MainiX 2 (Oak) \\n \\l\n")
+
+def install_grub(mount_point, disk_dev):
+    run_command(f"chroot {mount_point} apt-get update -y")
+    run_command(f"chroot {mount_point} apt-get install -y grub-pc os-prober")
+    
+    run_command(f"chroot {mount_point} grub-install {disk_dev}")
+
+    grub_config = """GRUB_DISTRIBUTOR="MainiX"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet"
+"""
+    with open(f"{mount_point}/etc/default/grub", "a") as f:
+        f.write(grub_config)
+    
+    run_command(f"chroot {mount_point} update-grub")
 
 def main():
     parser = argparse.ArgumentParser(description='MainiX Installer')
@@ -38,60 +75,20 @@ def main():
         print(f"Available disks: {', '.join(disks)}")
         disk_dev = f"/dev/{input('Select disk (e.g., sda): ').strip()}"
         
-        root_part = manual_partitioning(disk_dev)
+        root_part = f"/dev/{input('Enter root partition (e.g., sda1): ').strip()}"
         run_command(f"mkfs.ext4 -F {root_part}")
         run_command(f"mount {root_part} {args.mount_point}")
         
         run_command("pacman -Sy debootstrap --noconfirm")
         run_command(f"debootstrap stable {args.mount_point} http://deb.debian.org/debian/")
         
-        for fs in ['dev', 'proc', 'sys']:
-            target = f"{args.mount_point}/{fs}"
-            if not os.path.exists(target):
-                os.makedirs(target)
-            run_command(f"mount --bind /{fs} {target}")
+        prepare_chroot(args.mount_point)
         
-        run_command(f"chroot {args.mount_point} apt-get update -y")
-        run_command(f"chroot {args.mount_point} apt-get install -y sudo")
+        setup_os_identity(args.mount_point)
         
-        os_release = f"{args.mount_point}/etc/os-release"
-        with open(os_release, 'w') as f:
-            f.write("""PRETTY_NAME="MainiX 2 (Oak)"
-NAME="MainiX"
-VERSION_ID="2"
-VERSION="2 (Oak)"
-VERSION_CODENAME=oak
-ID=mainix
-ID_LIKE=debian
-HOME_URL="https://mainix.org/"
-SUPPORT_URL="https://mainix.org/support/"
-BUG_REPORT_URL="https://mainix.org/bugs/"
-""")
+        install_grub(args.mount_point, disk_dev)
         
-        service_dir = f"{args.mount_point}/etc/systemd/system/getty@tty1.service.d"
-        os.makedirs(service_dir, exist_ok=True)
-        
-        with open(f"{service_dir}/override.conf", 'w') as f:
-            f.write("""[Service]
-ExecStart=
-ExecStart=-/sbin/agetty --autologin root --noclear %I $TERM
-""")
-        
-        run_command(f"chroot {args.mount_point} apt-get install -y grub-pc")
-        run_command(f"chroot {args.mount_point} grub-install {disk_dev}")
-        
-        with open(f"{args.mount_point}/root/.bash_profile", 'a') as f:
-            f.write("""
-if [ ! -f /etc/oobe_completed ]; then
-    wget -O /tmp/oobe.py https://example.com/oobe.py
-    python3 /tmp/oobe.py
-    rm -f /etc/systemd/system/getty@tty1.service.d/override.conf
-    systemctl daemon-reload
-    touch /etc/oobe_completed
-fi
-""")
-        
-        print("\n\033[1;32mInstallation complete! Rebooting...\033[0m")
+        print("\n\033[1;32mMainiX 2 (Oak) installation complete! Rebooting...\033[0m")
         run_command("sleep 5")
         run_command("reboot")
 
