@@ -18,7 +18,31 @@ def run_command(cmd, check=True):
         if check: raise
         return e
 
+def manual_partitioning(disk_dev):
+    print("\n\033[1;32m=== Disk Partitioning (cfdisk) ===\033[0m")
+    print("Instructions:")
+    print("1. Create at least one root partition (/)")
+    print("2. Set bootable flag for root partition")
+    print("3. Write changes and quit")
+    
+    os.system("clear")
+    run_command("stty sane")
+    time.sleep(1)
+    
+    result = run_command(f"cfdisk {disk_dev}", check=False)
+    if result.returncode != 0:
+        raise Exception("Partitioning failed! Please try again.")
+    
+    partitions = subprocess.getoutput(
+        f"lsblk -ln {disk_dev} | grep part | awk '{{print $1}}'").split()
+    if not partitions:
+        raise Exception("No partitions found! Please create at least one partition.")
+    
+    print(f"\nCreated partitions: {partitions}")
+    return f"/dev/{input('Enter root partition (e.g., sda1): ').strip()}"
+
 def prepare_chroot(mount_point):
+    """Prepare chroot environment with all required mounts"""
     required_mounts = [
         ('/dev', f"{mount_point}/dev"),
         ('/dev/pts', f"{mount_point}/dev/pts"),
@@ -52,17 +76,17 @@ BUG_REPORT_URL="https://mainix.org/bugs/"
         f.write("MainiX 2 (Oak) \\n \\l\n")
 
 def install_grub(mount_point, disk_dev):
+    """Install GRUB with MainiX branding"""
     run_command(f"chroot {mount_point} apt-get update -y")
     run_command(f"chroot {mount_point} apt-get install -y grub-pc os-prober")
     
-    run_command(f"chroot {mount_point} grub-install {disk_dev}")
-
     grub_config = """GRUB_DISTRIBUTOR="MainiX"
 GRUB_CMDLINE_LINUX_DEFAULT="quiet"
 """
-    with open(f"{mount_point}/etc/default/grub", "a") as f:
+    with open(f"{mount_point}/etc/default/grub", "w") as f:
         f.write(grub_config)
     
+    run_command(f"chroot {mount_point} grub-install {disk_dev}")
     run_command(f"chroot {mount_point} update-grub")
 
 def main():
@@ -71,11 +95,13 @@ def main():
     args = parser.parse_args()
 
     try:
+        print("\033[1;32m=== MainiX 2 (Oak) Installation ===\033[0m")
         disks = subprocess.getoutput("lsblk -d -o NAME -n").split()
         print(f"Available disks: {', '.join(disks)}")
-        disk_dev = f"/dev/{input('Select disk (e.g., sda): ').strip()}"
+        disk_dev = f"/dev/{input('Select disk to install (e.g., sda): ').strip()}"
         
-        root_part = f"/dev/{input('Enter root partition (e.g., sda1): ').strip()}"
+        root_part = manual_partitioning(disk_dev)
+        
         run_command(f"mkfs.ext4 -F {root_part}")
         run_command(f"mount {root_part} {args.mount_point}")
         
@@ -88,7 +114,7 @@ def main():
         
         install_grub(args.mount_point, disk_dev)
         
-        print("\n\033[1;32mMainiX 2 (Oak) installation complete! Rebooting...\033[0m")
+        print("\n\033[1;32mMainiX 2 (Oak) installed successfully! Rebooting...\033[0m")
         run_command("sleep 5")
         run_command("reboot")
 
